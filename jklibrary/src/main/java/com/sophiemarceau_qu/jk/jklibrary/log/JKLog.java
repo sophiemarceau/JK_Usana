@@ -5,12 +5,22 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * 打印日志堆栈信息
  * File输出
  * 模拟控制台
  */
 public class JKLog {
+    private static final String JK_LOG_PACKAGE;
+
+    static {
+        String className = JKLog.class.getName();
+        JK_LOG_PACKAGE = className.substring(0, className.lastIndexOf('.') + 1);
+    }
+
     public static void v(Object... contents) {
         log(JKLogType.V, contents);
     }
@@ -72,12 +82,34 @@ public class JKLog {
             return;
         }
         StringBuilder sb = new StringBuilder();
-        String body = parseBody(contents);
+        if (config.includeTread()) {
+            String threadInfo = JKLogConfig.JK_THREAD_FORMATTER.format(Thread.currentThread());
+            sb.append(threadInfo).append("\n");
+        }
+        if (config.stackTraceDepth() > 0) {
+            String stackTrace = JKLogConfig.JK_STACK_TRACE_FORMATTER.format(
+                    JKStackTraceUtil.getCroppedRealStackTrack(
+                            new Throwable().getStackTrace(), JK_LOG_PACKAGE, config.stackTraceDepth()));
+            sb.append(stackTrace).append("\n");
+        }
+        String body = parseBody(contents, config);
         sb.append(body);
-        Log.println(type, tag, body);
+        List<JKLogPrinter> printers = config.printers() != null ?
+                Arrays.asList(config.printers())
+                : JKLogManager.getInstance().getPrinters();
+        if (printers == null) {
+            return;
+        }
+        //打印LOG
+        for (JKLogPrinter printer : printers) {
+            printer.print(config, type, tag, sb.toString());
+        }
     }
 
-    private static String parseBody(@NonNull Object[] contents) {
+    private static String parseBody(@NonNull Object[] contents, @NonNull JKLogConfig config) {
+        if (config.injectJsonParser() != null) {
+            return config.injectJsonParser().toJson(contents);
+        }
         StringBuilder sb = new StringBuilder();
         for (Object o : contents) {
             sb.append(o.toString()).append(";");
